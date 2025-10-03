@@ -1,0 +1,76 @@
+# Importation des modules nécessaires
+import webbrowser
+from datetime import datetime
+
+# Liste pour stocker les réponses des utilisateurs
+reponses_utilisateur = []
+
+def generer_page_html():
+    """Génère une page HTML affichant l'historique des réponses et l'ouvre dans le navigateur."""
+    contenu_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Réponses de l'utilisateur</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { color: #333; }
+            table { border-collapse: collapse; width: 70%; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+        </style>
+    </head>
+    <body>
+        <h1>Historique des réponses</h1>
+        <table>
+            <tr>
+                <th>Nom</th>
+                <th>Réponse</th>
+                <th>Date et Heure</th>
+            </tr>
+    """
+
+    # Ajout des réponses au tableau HTML
+    for reponse in reponses_utilisateur:
+        contenu_html += f"""
+            <tr>
+                <td>{reponse['nom']}</td>
+                <td>{reponse['reponse']}</td>
+                <td>{reponse['horodatage']}</td>
+            </tr>
+        """
+
+    contenu_html += """
+        </table>
+    </body>
+    </html>
+    """
+
+    # Écriture du fichier HTML et ouverture dans le navigateur
+    with open("reponses_utilisateur.html", "w", encoding="utf-8") as fichier:
+        fichier.write(contenu_html)
+    webbrowser.open("reponses_utilisateur.html")
+
+# Initialisation : ouverture de la page HTML (vide au début)
+generer_page_html()
+
+# Boucle principale pour collecter les réponses
+continu = True
+while continu:
+    nom = input("Quel est votre nom ? ")
+    print(f"Bonjour, {nom} !")
+    reponse = input("Souhaitez-vous continuer ? (oui/non) ").strip().lower()
+
+    # Stockage de la réponse avec horodatage
+    reponses_utilisateur.append({
+        "nom": nom,
+        "reponse": reponse,
+        "horodatage": datetime.now().strftime("%d/%m/%Y %H:%M:%S")  # Format : JJ/MM/AAAA HH:MM:SS
+    })
+
+    # Mise à jour de la page HTML
+    generer_page_html()
+
+    if reponse != "oui":
+        continu = False
+        print("Au revoir !")
