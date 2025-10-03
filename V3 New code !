@@ -1,0 +1,83 @@
+# Bibliothèque standard pour ouvrir un navigateur par défaut
+import webbrowser
+from datetime import datetime  # Module pour gérer les dates et heures
+
+# Liste pour stocker les réponses des utilisateurs
+reponses_utilisateur = []
+
+def generer_page_html():
+    """Génère une page HTML avec l'historique des réponses et l'ouvre dans le navigateur."""
+    contenu_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Réponses de l'utilisateur</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { color: #333; }
+            table { border-collapse: collapse; width: 80%; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+        </style>
+    </head>
+    <body>
+        <h1>Historique des réponses</h1>
+        <table>
+            <tr>
+                <th>Prénom</th>
+                <th>Nom</th>
+                <th>Réponse</th>
+                <th>Date et Heure</th>
+            </tr>
+    """
+
+    # Ajouter les réponses au tableau HTML
+    for reponse in reponses_utilisateur:
+        contenu_html += f"""
+            <tr>
+                <td>{reponse['prenom']}</td>
+                <td>{reponse['nom']}</td>
+                <td>{reponse['reponse']}</td>
+                <td>{reponse['horodatage']}</td>
+            </tr>
+        """
+
+    # Fermer le HTML
+    contenu_html += """
+        </table>
+    </body>
+    </html>
+    """
+
+    # Écrire le contenu dans un fichier HTML
+    with open("reponses_utilisateur.html", "w", encoding="utf-8") as fichier:
+        fichier.write(contenu_html)
+
+    # Ouvrir le fichier dans le navigateur
+    webbrowser.open("reponses_utilisateur.html")
+
+# Boucle principale pour collecter les réponses
+continu = True
+while continu:
+    # Demander le prénom et le nom de l'utilisateur
+    prenom = input("Quel est votre prénom ? ")
+    nom = input("Quel est votre nom ? ")
+    print(f"Bonjour, {prenom} {nom} !")
+
+    # Demander si l'utilisateur souhaite continuer
+    reponse = input("Souhaitez-vous continuer ? (oui/non) ").strip().lower()
+
+    # Stocker la réponse avec prénom, nom, réponse et horodatage
+    reponses_utilisateur.append({
+        "prenom": prenom,
+        "nom": nom,
+        "reponse": reponse,
+        "horodatage": datetime.now().strftime("%d/%m/%Y %H:%M:%S")  # Format : JJ/MM/AAAA HH:MM:SS
+    })
+
+    # Condition pour quitter la boucle
+    if reponse != "oui":
+        continu = False
+        print("Au revoir !")
+        # Générer et ouvrir la page HTML uniquement quand on quitte
+        generer_page_html()
