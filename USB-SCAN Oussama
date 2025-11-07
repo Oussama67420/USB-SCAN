@@ -1,0 +1,432 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import webbrowser
+import os
+import html
+from datetime import datetime
+import platform
+import subprocess
+import re
+import threading
+
+def detecter_ports_usb():
+    """Détecte tous les ports USB de l'appareil"""
+    systeme = platform.system()
+    ports_usb = []
+    
+    try:
+        if systeme == "Windows":
+            cmd = 'powershell "Get-PnpDevice -Class USB | Select-Object Status, FriendlyName, InstanceId"'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                lignes = result.stdout.strip().split('\n')
+                for ligne in lignes[3:]:
+                    if ligne.strip():
+                        parts = ligne.split(maxsplit=1)
+                        if len(parts) >= 2:
+                            status = parts[0].strip()
+                            nom = parts[1].strip()
+                            ports_usb.append({
+                                "nom": nom,
+                                "status": status,
+                                "type": "USB"
+                            })
+        
+        elif systeme == "Linux":
+            result = subprocess.run(['lsusb'], capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                lignes = result.stdout.strip().split('\n')
+                for ligne in lignes:
+                    if ligne.strip():
+                        match = re.search(r'ID\s+[\w:]+\s+(.+)', ligne)
+                        if match:
+                            ports_usb.append({
+                                "nom": match.group(1).strip(),
+                                "status": "OK",
+                                "type": "USB"
+                            })
+        
+        elif systeme == "Darwin":
+            result = subprocess.run(['system_profiler', 'SPUSBDataType'], 
+                                  capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                lignes = result.stdout.split('\n')
+                for ligne in lignes:
+                    if 'Product ID:' in ligne or ':' in ligne:
+                        nom = ligne.split(':')[0].strip()
+                        if nom and len(nom) > 3 and not nom.startswith('USB'):
+                            ports_usb.append({
+                                "nom": nom,
+                                "status": "OK",
+                                "type": "USB"
+                            })
+    
+    except Exception as e:
+        print(f"⚠ Erreur lors de la détection USB : {e}")
+        return []
+    
+    return ports_usb
+
+def analyser_systeme():
+    """Récupère les informations système"""
+    est_admin = False
+    try:
+        if platform.system() == "Windows":
+            import ctypes
+            est_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+        else:
+            est_admin = os.getuid() == 0
+    except:
+        est_admin = False
+    
+    ports_usb = detecter_ports_usb()
+    
+    return {
+        "systeme": platform.system(),
+        "version": platform.version(),
+        "processeur": platform.processor(),
+        "ports_usb": ports_usb,
+        "nb_usb": len(ports_usb),
+        "est_admin": est_admin
+    }
+
+def generer_html(reponses):
+    """Génère le contenu HTML du rapport"""
+    contenu = """<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rapport d'analyse système</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { 
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        table { 
+            border-collapse: collapse; 
+            width: 100%;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+        th, td { 
+            border: 1px solid #ddd; 
+            padding: 10px; 
+            text-align: left; 
+        }
+        th { 
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) { 
+            background-color: #f9f9f9; 
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .badge-admin {
+            background-color: #ff9800;
+            color: white;
+        }
+        .badge-user {
+            background-color: #2196F3;
+            color: white;
+        }
+        .footer {
+            margin-top: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Historique des analyses USB</h1>
+        <p><strong>Nombre total d'analyses :</strong> """ + str(len(reponses)) + """</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Nom</th>
+                    <th>Prénom</th>
+                    <th>Poste</th>
+                    <th>Type de compte</th>
+                    <th>Système</th>
+                    <th>Processeur</th>
+                    <th>Ports USB</th>
+                    <th>Date et Heure</th>
+                </tr>
+            </thead>
+            <tbody>
+"""
+    
+    for idx, r in enumerate(reponses, 1):
+        badge_class = "badge-admin" if r['est_admin'] else "badge-user"
+        badge_text = "Administrateur" if r['est_admin'] else "Utilisateur"
+        
+        contenu += f"""                <tr>
+                    <td>{idx}</td>
+                    <td>{html.escape(r['nom_utilisateur'])}</td>
+                    <td>{html.escape(r['prenom_utilisateur'])}</td>
+                    <td>{html.escape(r['poste'])}</td>
+                    <td><span class="badge {badge_class}">{badge_text}</span></td>
+                    <td>{html.escape(r['systeme'])}</td>
+                    <td>{html.escape(r['processeur'])}</td>
+                    <td>{html.escape(str(r['ports_usb']))}</td>
+                    <td>{html.escape(r['date_heure'])}</td>
+                </tr>
+"""
+    
+    contenu += """            </tbody>
+        </table>
+        <div class="footer">
+            <p>Rapport généré automatiquement le """ + datetime.now().strftime("%d/%m/%Y à %H:%M:%S") + """</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+    return contenu
+
+class AnalyseurUSBGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("🔍 Analyseur de Système USB")
+        self.root.geometry("800x700")
+        self.root.configure(bg="#f0f0f0")
+        
+        self.reponses_utilisateur = []
+        
+        # Style
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('Title.TLabel', font=('Arial', 16, 'bold'), background="#f0f0f0")
+        style.configure('Info.TLabel', font=('Arial', 10), background="#f0f0f0")
+        style.configure('Success.TLabel', font=('Arial', 10, 'bold'), foreground="#4CAF50", background="#f0f0f0")
+        
+        self.creer_interface()
+    
+    def creer_interface(self):
+        # Titre
+        titre_frame = tk.Frame(self.root, bg="#4CAF50", height=80)
+        titre_frame.pack(fill=tk.X, pady=(0, 20))
+        titre_frame.pack_propagate(False)
+        
+        titre_label = tk.Label(titre_frame, text="🔍 ANALYSEUR DE SYSTÈME USB", 
+                              font=('Arial', 18, 'bold'), bg="#4CAF50", fg="white")
+        titre_label.pack(expand=True)
+        
+        # Frame principal
+        main_frame = tk.Frame(self.root, bg="#f0f0f0")
+        main_frame.pack(padx=30, pady=10, fill=tk.BOTH, expand=True)
+        
+        # Section informations utilisateur
+        info_frame = tk.LabelFrame(main_frame, text="📝 Informations utilisateur", 
+                                  font=('Arial', 12, 'bold'), bg="white", padx=20, pady=15)
+        info_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        # Nom
+        tk.Label(info_frame, text="Nom d'utilisateur :", font=('Arial', 10), bg="white").grid(row=0, column=0, sticky='w', pady=5)
+        self.nom_entry = ttk.Entry(info_frame, font=('Arial', 10), width=40)
+        self.nom_entry.grid(row=0, column=1, pady=5, padx=10)
+        
+        # Prénom
+        tk.Label(info_frame, text="Prénom d'utilisateur :", font=('Arial', 10), bg="white").grid(row=1, column=0, sticky='w', pady=5)
+        self.prenom_entry = ttk.Entry(info_frame, font=('Arial', 10), width=40)
+        self.prenom_entry.grid(row=1, column=1, pady=5, padx=10)
+        
+        # Poste
+        tk.Label(info_frame, text="Nom/Numéro de poste :", font=('Arial', 10), bg="white").grid(row=2, column=0, sticky='w', pady=5)
+        self.poste_entry = ttk.Entry(info_frame, font=('Arial', 10), width=40)
+        self.poste_entry.grid(row=2, column=1, pady=5, padx=10)
+        
+        # Bouton analyser
+        btn_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        btn_frame.pack(pady=15)
+        
+        self.btn_analyser = tk.Button(btn_frame, text="🔍 LANCER L'ANALYSE", 
+                                      font=('Arial', 12, 'bold'), bg="#4CAF50", fg="white",
+                                      padx=30, pady=12, command=self.lancer_analyse,
+                                      cursor="hand2", relief=tk.RAISED, bd=3)
+        self.btn_analyser.pack()
+        
+        # Zone de résultats
+        result_frame = tk.LabelFrame(main_frame, text="📊 Résultats de l'analyse", 
+                                    font=('Arial', 12, 'bold'), bg="white", padx=20, pady=15)
+        result_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        # Text widget avec scrollbar
+        scroll_frame = tk.Frame(result_frame, bg="white")
+        scroll_frame.pack(fill=tk.BOTH, expand=True)
+        
+        scrollbar = ttk.Scrollbar(scroll_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.result_text = tk.Text(scroll_frame, font=('Courier', 10), 
+                                   yscrollcommand=scrollbar.set, bg="#f9f9f9",
+                                   height=12, relief=tk.SUNKEN, bd=2)
+        self.result_text.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.result_text.yview)
+        
+        # Boutons d'action
+        action_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        action_frame.pack(pady=10)
+        
+        self.btn_generer = tk.Button(action_frame, text="📄 Générer le rapport HTML", 
+                                     font=('Arial', 11, 'bold'), bg="#2196F3", fg="white",
+                                     padx=20, pady=10, command=self.generer_rapport,
+                                     cursor="hand2", state=tk.DISABLED)
+        self.btn_generer.pack(side=tk.LEFT, padx=5)
+        
+        self.btn_nouvelle = tk.Button(action_frame, text="🔄 Nouvelle analyse", 
+                                      font=('Arial', 11, 'bold'), bg="#FF9800", fg="white",
+                                      padx=20, pady=10, command=self.nouvelle_analyse,
+                                      cursor="hand2")
+        self.btn_nouvelle.pack(side=tk.LEFT, padx=5)
+        
+        # Compteur d'analyses
+        self.compteur_label = tk.Label(main_frame, text="Analyses effectuées : 0", 
+                                      font=('Arial', 10, 'bold'), bg="#f0f0f0", fg="#666")
+        self.compteur_label.pack(pady=5)
+    
+    def lancer_analyse(self):
+        nom = self.nom_entry.get().strip()
+        prenom = self.prenom_entry.get().strip()
+        poste = self.poste_entry.get().strip()
+        
+        if not nom or not prenom or not poste:
+            messagebox.showwarning("⚠️ Champs manquants", 
+                                  "Veuillez remplir tous les champs avant de lancer l'analyse.")
+            return
+        
+        # Désactiver le bouton pendant l'analyse
+        self.btn_analyser.config(state=tk.DISABLED, text="⏳ Analyse en cours...")
+        self.result_text.delete(1.0, tk.END)
+        self.result_text.insert(tk.END, "🔍 Analyse du système en cours...\n\n")
+        self.root.update()
+        
+        # Lancer l'analyse dans un thread séparé
+        thread = threading.Thread(target=self.executer_analyse, args=(nom, prenom, poste))
+        thread.start()
+    
+    def executer_analyse(self, nom, prenom, poste):
+        try:
+            # Message de bienvenue spécial
+            if nom.lower() == "camara" and prenom.lower() == "ali":
+                message = f"👋 Te revoilà, {prenom} {nom} !\n\n"
+            else:
+                message = f"👋 Bonjour, {prenom} {nom} !\n\n"
+            
+            self.root.after(0, lambda: self.result_text.insert(tk.END, message))
+            
+            # Analyse système
+            infos = analyser_systeme()
+            
+            resultat = f"{'='*50}\n"
+            resultat += f"RÉSULTATS DE L'ANALYSE\n"
+            resultat += f"{'='*50}\n\n"
+            resultat += f"💻 Système : {infos['systeme']}\n"
+            resultat += f"📌 Version : {infos['version']}\n"
+            resultat += f"⚙️  Processeur : {infos['processeur']}\n"
+            resultat += f"🔌 Ports USB détectés : {infos['nb_usb']}\n"
+            
+            type_compte = "👑 Administrateur" if infos['est_admin'] else "👤 Utilisateur standard"
+            resultat += f"👤 Type de compte : {type_compte}\n"
+            resultat += f"📅 Date/Heure : {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n\n"
+            
+            if infos['ports_usb']:
+                resultat += f"{'='*50}\n"
+                resultat += f"DÉTAILS DES PÉRIPHÉRIQUES USB\n"
+                resultat += f"{'='*50}\n"
+                for idx, port in enumerate(infos['ports_usb'], 1):
+                    resultat += f"\n{idx}. {port['nom']}\n"
+                    resultat += f"   Status: {port.get('status', 'N/A')}\n"
+            
+            resultat += f"\n{'='*50}\n"
+            resultat += f"✅ Analyse terminée avec succès !\n"
+            resultat += f"{'='*50}\n"
+            
+            # Enregistrer les données
+            self.reponses_utilisateur.append({
+                "nom_utilisateur": nom,
+                "prenom_utilisateur": prenom,
+                "poste": poste,
+                "systeme": infos["systeme"],
+                "processeur": infos["processeur"],
+                "ports_usb": infos["nb_usb"],
+                "est_admin": infos["est_admin"],
+                "date_heure": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            })
+            
+            # Mettre à jour l'interface
+            self.root.after(0, lambda: self.afficher_resultat(resultat))
+            
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("❌ Erreur", f"Erreur lors de l'analyse : {str(e)}"))
+            self.root.after(0, lambda: self.btn_analyser.config(state=tk.NORMAL, text="🔍 LANCER L'ANALYSE"))
+    
+    def afficher_resultat(self, resultat):
+        self.result_text.delete(1.0, tk.END)
+        self.result_text.insert(tk.END, resultat)
+        self.btn_analyser.config(state=tk.NORMAL, text="🔍 LANCER L'ANALYSE")
+        self.btn_generer.config(state=tk.NORMAL)
+        self.compteur_label.config(text=f"Analyses effectuées : {len(self.reponses_utilisateur)}")
+        messagebox.showinfo("✅ Succès", "Analyse terminée avec succès !")
+    
+    def nouvelle_analyse(self):
+        self.nom_entry.delete(0, tk.END)
+        self.prenom_entry.delete(0, tk.END)
+        self.poste_entry.delete(0, tk.END)
+        self.result_text.delete(1.0, tk.END)
+        self.nom_entry.focus()
+    
+    def generer_rapport(self):
+        if not self.reponses_utilisateur:
+            messagebox.showwarning("⚠️ Aucune donnée", "Aucune analyse n'a été effectuée.")
+            return
+        
+        try:
+            fichier_html = "rapport_usb.html"
+            with open(fichier_html, "w", encoding="utf-8") as f:
+                f.write(generer_html(self.reponses_utilisateur))
+            
+            chemin_absolu = os.path.abspath(fichier_html)
+            webbrowser.open("file://" + chemin_absolu)
+            messagebox.showinfo("✅ Rapport généré", 
+                              f"Le rapport a été généré et ouvert dans votre navigateur.\n\n{chemin_absolu}")
+        except Exception as e:
+            messagebox.showerror("❌ Erreur", f"Erreur lors de la génération du rapport : {str(e)}")
+
+def main():
+    root = tk.Tk()
+    app = AnalyseurUSBGUI(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
